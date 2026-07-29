@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Excel Power Toolbar</title>
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+  <style>
+    /* ── Reset & Base ─────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --navy:   #1F3864;
+      --blue:   #2E75B6;
+      --green:  #107C41;
+      --orange: #C55A11;
+      --purple: #7030A0;
+      --brown:  #833C00;
+      --red:    #C00000;
+      --teal:   #008080;
+      --bg:     #F4F6FB;
+      --surface:#FFFFFF;
+      --border: #D9E1EE;
+      --text:   #1A1A2E;
+      --muted:  #6B7A99;
+      --radius: 7px;
+      --shadow: 0 1px 4px rgba(31,56,100,.10);
+    }
+
+    html, body {
+      height: 100%;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 12px;
+      background: var(--bg);
+      color: var(--text);
+      overflow-x: hidden;
+    }
+
+    /* ── Header ───────────────────────────────────────── */
+    .header {
+      background: linear-gradient(135deg, var(--navy) 0%, var(--blue) 100%);
+      color: #fff;
+      padding: 10px 12px 8px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 2px 8px rgba(31,56,100,.25);
+    }
+    .header-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .header h1 {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: .3px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .header h1 span.icon { font-size: 16px; }
+    .header-sub {
+      font-size: 10px;
+      opacity: .75;
+      margin-top: 2px;
+    }
+    .status-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: #4ade80;
+      box-shadow: 0 0 0 2px rgba(74,222,128,.3);
+      flex-shrink: 0;
+    }
+
+    /* ── Search ───────────────────────────────────────── */
+    .search-wrap {
+      padding: 8px 10px 6px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 52px;
+      z-index: 99;
+    }
+    .search-wrap input {
+      width: 100%;
+      padding: 5px 10px 5px 28px;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      font-size: 11px;
+      background: var(--bg);
+      outline: none;
+      transition: border .15s;
+    }
+    .search-wrap input:focus { border-color: var(--blue); }
+    .search-icon {
+      position: absolute;
+      left: 19px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--muted);
+      font-size: 12px;
+      pointer-events: none;
+    }
+    .search-wrap { position: sticky; top: 52px; }
+    .search-inner { position: relative; }
+
+    /* ── Toast ────────────────────────────────────────── */
+    #toast {
+      position: fixed;
+      bottom: 16px; left: 50%;
+      transform: translateX(-50%) translateY(60px);
+      background: var(--navy);
+      color: #fff;
+      padding: 7px 16px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 500;
+      z-index: 999;
+      transition: transform .25s ease, opacity .25s ease;
+      opacity: 0;
+      pointer-events: none;
+      white-space: nowrap;
+      box-shadow: 0 4px 16px rgba(0,0,0,.25);
+    }
+    #toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+    /* ── Scroll area ──────────────────────────────────── */
+    .scroll-area {
+      padding: 8px 8px 80px;
+      overflow-y: auto;
+    }
+
+    /* ── Section ──────────────────────────────────────── */
+    .section { margin-bottom: 8px; }
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 8px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      user-select: none;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .4px;
+      text-transform: uppercase;
+      color: #fff;
+      transition: opacity .15s;
+    }
+    .section-header:hover { opacity: .88; }
+    .section-header .chevron {
+      margin-left: auto;
+      font-size: 10px;
+      transition: transform .2s;
+    }
+    .section-header.collapsed .chevron { transform: rotate(-90deg); }
+    .section-body {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px;
+      padding: 5px 0 2px;
+    }
+    .section-body.hidden { display: none; }
+    .section-body.cols-1 { grid-template-columns: 1fr; }
+
+    /* ── Buttons ──────────────────────────────────────── */
+    .btn {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 6px 8px;
+      border: 1px solid transparent;
+      border-radius: var(--radius);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background .12s, border-color .12s, transform .08s;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      box-shadow: var(--shadow);
+      border-color: var(--border);
+      width: 100%;
+      text-align: left;
+    }
+    .btn:hover {
+      border-color: currentColor;
+      filter: brightness(.96);
+      transform: translateY(-1px);
+      box-shadow: 0 3px 8px rgba(31,56,100,.12);
+    }
+    .btn:active { transform: translateY(0); }
+    .btn .bi { font-size: 13px; flex-shrink: 0; }
+
+    /* accent variants */
+    .btn-blue   { color: var(--blue);   }
+    .btn-green  { color: var(--green);  }
+    .btn-orange { color: var(--orange); }
+    .btn-purple { color: var(--purple); }
+    .btn-brown  { color: var(--brown);  }
+    .btn-navy   { color: var(--navy);   }
+    .btn-teal   { color: var(--teal);   }
+    .btn-red    { color: var(--red);    background: #fff5f5; border-color: #ffc9c9; }
+
+    /* full-width close button */
+    .btn-close-big {
+      background: var(--red);
+      color: #fff;
+      border-color: var(--red);
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 9px;
+      margin-top: 4px;
+    }
+    .btn-close-big:hover { background: #a50000; border-color: #a50000; color:#fff; }
+
+    /* ── Modal ────────────────────────────────────────── */
+    .modal-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.45);
+      z-index: 500;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-overlay.show { display: flex; }
+    .modal {
+      background: var(--surface);
+      border-radius: 10px;
+      padding: 18px;
+      width: 88%;
+      max-width: 300px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.25);
+    }
+    .modal h3 {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--navy);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .modal label {
+      display: block;
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--muted);
+      margin-bottom: 3px;
+      text-transform: uppercase;
+      letter-spacing: .4px;
+    }
+    .modal input, .modal select {
+      width: 100%;
+      padding: 6px 8px;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      font-size: 11px;
+      margin-bottom: 8px;
+      outline: none;
+      transition: border .15s;
+    }
+    .modal input:focus, .modal select:focus { border-color: var(--blue); }
+    .modal-actions {
+      display: flex;
+      gap: 6px;
+      margin-top: 4px;
+    }
+    .modal-actions button {
+      flex: 1;
+      padding: 7px;
+      border-radius: 5px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: opacity .15s;
+    }
+    .modal-actions button:hover { opacity: .85; }
+    .btn-confirm { background: var(--navy); color: #fff; }
+    .btn-cancel  { background: var(--border); color: var(--text); }
+
+    /* ── No-results ───────────────────────────────────── */
+    #no-results {
+      display: none;
+      text-align: center;
+      padding: 24px 0;
+      color: var(--muted);
+      font-size: 11px;
+    }
+    #no-results .nr-icon { font-size: 28px; margin-bottom: 6px; }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="header-top">
+    <h1><span class="icon">⚡</span> Excel Power Toolbar</h1>
+    <div class="status-dot" id="statusDot" title="Connected to Excel"></div>
+  </div>
+  <div class="header-sub">40+ tools · works in Excel Web &amp; Desktop</div>
+</div>
+
+<!-- Search -->
+<div class="search-wrap">
+  <div class="search-inner">
+    <span class="search-icon">🔍</span>
+    <input type="text" id="searchInput" placeholder="Search tools…" oninput="filterTools(this.value)" />
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <h3 id="modalTitle">Formula Builder</h3>
+    <div id="modalBody"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-confirm" id="modalConfirm">Insert</button>
+    </div>
+  </div>
+</div>
+
+<!-- Scroll area -->
+<div class="scroll-area" id="scrollArea">
+
+  <!-- TEXT CASE -->
+  <div class="section" data-section="text-case">
+    <div class="section-header" style="background:var(--blue)" onclick="toggleSection(this)">
+      <span>Aa</span> Text Case
+      <span class="chevron">▼</span>
+    </div>
+    <div class="section-body">
+      <button class="btn btn-blue" onclick="toUpperCase()" data-label="UPPER CASE">
+        <span class="bi">⬆</span> UPPER CASE
+      </button>
+      <button class="btn btn-blue" onclick="toLowerCase()" data-label="lower case">
+        <span class="bi">⬇</span> lower case
+      </button>
+      <button class="btn btn-blue" onclick="toProperCase()" data-label="Proper Case">
+        <span class="bi">📝</span> Proper Case
+      </button>
+      <button class="btn btn-blue" onclick="toSentenceCase()" data-label="Sentence Case">
+        <span class="bi">✏️</span> Sentence Case
+      </button>
+      <button class="btn btn-blue" onclick="trimSpaces()" data-label="Trim Spaces">
+        <span class="bi">✂️</span> Trim Spaces
+      </button>
+      <button class="btn btn-blue" onclick="removeExtraSpaces()" data-label="Remove Extra Spaces">
+        <span class="bi">🧹</span> Remove Extra Spaces
+      </button>
+    </div>
+  </div>
+
+  <!-- SELECTION -->
+  <div class="section" data-section="selection">
+    <div class="section-header" style="background:var(--green)" onclick="toggleSection(this)">
+      <span>⬛</span> Selection
+      <span class="chevron">▼</span>
+    </div>
+    <div class="section-body">
+      <button class="btn btn-green" onclick="selectAll()" data-label="Select All">
+        <span class="bi">⬜</span> Select All
+      </button>
+      <button class="btn btn-green" onclick="selectUsedRange()" data-label="Used Range">
+        <span class="bi">📊</span> Used Range
+      </button>
+      <button class="btn btn-green" onclick="selectColumn()" data-label="Select Column">
+        <span class="bi">⬛</span> Select Column
+      </button>
+      <button class="btn btn-green" onclick="selectRow()" data-label="Select Row">
+        <span class="bi">➖</span> Select Row
+      </button>
+      <button class="btn btn-green" onclick="goToCell()" data-label="Go To Cell">
+        <span class="bi">🎯</span> Go To Cell
+      </button>
+      <button class="btn btn-green" onclick="jumpToLastCell()" data-label="Last Used Cell">
+        <span class="bi">⏭</span> Last Used Cell
+      </button>
+    </div>
+  </div>
+
+  <!-- COPY / PASTE -->
+  <div class="section" data-section="copy-paste">
+    <div class="section-header" style="background:var(--orange)" onclick="toggleSection(this)">
+      <span>📋</span> Copy / Paste
+      <span class="chevron">▼</span>
+    </div>
+    <div class="section-body">
+      <button class="btn btn-orange" onclick="copyValues()" data-label="Copy Values">
+        <span class="bi">📄</span> Copy Values
+      </button>
+      <button class="btn btn-orange" onclick="pasteValues()" data-label="Paste Values">
+        <span class="bi">📥</span> Paste Values
+      </button>
+      <button class="btn btn-orange" onclick="fillDown()" data-label="Fill Down">
+        <span class="bi">⬇</span> Fill Down
+      </button>
+      <button class="btn btn-orange" onclick="fillRight()" data-label="Fill Right">
+        <span class="bi">➡</span> Fill Right
+      </button>
+      <button class="btn btn-orange" onclick="clearContents()" data-label="Clear Contents">
+        <span class="bi">🗑</span> Clear Contents
+      </button>
+      <button class="btn btn-orange" onclick="clearFormats()" data-label="Clear Formats">
+        <span class="bi">🧽</span> Clear Formats
+      </button>
+    </div>
+  </div>
+
+  <!-- FORMULA BUILDERS -->
+  <div class="section" data-section="formulas">
+    <div class="section-header" style="background:var(--purple)" onclick="toggleSection(this)">
+      <span>𝑓𝑥</span> Formula Builders
+      <span class="chevron">▼</span>
+    </div>
+    <div class="section-body">
+      <button class="btn btn-purple" onclick="buildVLOOKUP()" data-label="VLOOKUP">
+        <span class="bi">🔍</span> VLOOKUP
+      </button>
+      <button class="btn btn-purple" onclick="buildIF()" data-label="IF">
+        <span class="bi">❓</span> IF
+      </button>
+      <button class="btn btn-purple" onclick="buildSUMIF()" data-label="SUMIF">
+        <span class="bi">➕</span> SUMIF
+      </button>
+      <button class="btn btn-purple" onclick="buildCOUNTIF()" data-label="COUNTIF">
+        <span class="bi">🔢</span> COUNTIF
+      </button>
+      <button class="btn btn-purple" onclick="buildINDEXMATCH()" data-label="INDEX MATCH">
+        <span class="bi">📌</span> INDEX/MATCH
+      </button>
+      <button class="btn btn-purple" onclick="buildCONCAT()" data-label="CONCAT">
+        <span class="bi">🔗</span> CONCAT
+      </button>
+      <button class="btn btn-purple" onclick="buildTEXT()" data-label="TEXT">
+        <span class="bi">🔤</span> TEXT
+      </button>
+      <button class="btn btn-purple" onclick="buildDATE()" data-label="DATE">
+        <span class="bi">📅</span> DATE
+      </button>
+      <button class="btn btn-purple" onclick="buildLEFT()" data-label="LEFT">
+        <span class="bi">◀</span> LEFT
+      </button>
+      <button class="btn btn-purple" onclick="buildMID()" data-label="MID">
+        <span class="bi">↔</span> MID
+      </button>
+      <button class="btn btn-purple" onclick="buildRIGHT()" data-label="RIGHT">
+        <span class="bi">▶</span> RIGHT
+      </button>
+      <button class="btn btn-purple" onclick="buildSUMIFS()" data-label="SUMIFS">
+        <span class="bi">∑</span> SUMIFS
+      </button>
+    </div>
+  </div>
+
+  <!-- FORMATTING -->
+  <div class="section" data-section="formatting">
+    <div class="section-header" style="background:var(--brown)" onclick="toggleSection(this)">
+      <span>🎨</span> Formatting
+      <span class="chevron">▼</span>
+    </div>
+    <div class="section-body">
+      <button class="btn btn-brown" onclick="autoFitColumns()" data-label="AutoFit Columns">
+        <span class="bi">↔</span> AutoFit Cols
+      </button>
+      <button class="btn btn-brown" onclick="autoFitRows()" data-label="AutoFit Rows">
+        <span class="bi">↕</span> AutoFit Rows
+      </button>
+      <button class="btn btn-brown" onclick="addBorders()" data-label="Add Borders">
+        <span class="bi">⬜</span> Add Borders
+      </button>
+      <button class="btn btn-brown" onclick="removeBorders()" data-label="Remove Borders">
+        <span class="bi">🚫</span> Remove Borders
+      </button>
+      <button class="btn btn-brown" onclick="applyBold()" data-label="Bold">
+        <span class="bi"><b>B</b></span> Bold
+      </button>
+      <button class="btn btn-brown" onclick="applyItalic()" data-label="Italic">
+        <span class="bi"><i>I</i></span> Italic
+      </button>
+      <button class="btn btn-brown" onclick="highlightYellow()" data-label="Highlight Yellow">
+        <span class="bi">🟡</span> Highlight
+      </button>
+      <button class="btn btn-brown" onclick="clearHighlight()" data-label="Clear Highlight">
+        <span class="bi">⚪</span> Clear Color
+      </button>
+      <button class="btn btn-brown" onclick="alignLeft()" data-label="Align Left">
+        <span class="bi">◀</span> Align Left
+      </button>
+      <button class="btn btn-brown" onclick="alignCenter()" data-label="Align Center">
+        <span class="bi">⬛</span> Align Center
+      </button>
+      <button class="btn btn-brown" onclick="alignRight()" data-label="Align Right">
+        <span class="bi">▶</span> Align Right
+      </button>
+      <button class="btn btn-brown" onclick="wrapText()" data-label="Wrap Text">
+        <span class="bi">↩</span> Wrap Text
+      </button>
+    </div>
+  </div>
+
+  <!-- UTILITIES -->
+  <div class="section" data-section="utilities">
+    <div class="section-header" style="background:var(--navy)" onclick="toggleSection(this)">
+      <span>🛠</span> Utilities
+      <span class="chevron">▼</span>
+    </div>
+    <div class="section-body">
+      <button class="btn btn-navy" onclick="sortAZ()" data-label="Sort A to Z">
+        <span class="bi">🔼</span> Sort A→Z
+      </button>
+      <button class="btn btn-navy" onclick="sortZA()" data-label="Sort Z to A">
+        <span class="bi">🔽</span> Sort Z→A
+      </button>
+      <button class="btn btn-navy" onclick="deleteBlankRows()" data-label="Delete Blank Rows">
+        <span class="bi">🗑</span> Delete Blanks
+      </button>
+      <button class="btn btn-navy" onclick="removeDuplicates()" data-label="Remove Duplicates">
+        <span class="bi">🔄</span> Remove Dups
+      </button>
+      <button class="btn btn-navy" onclick="freezeTopRow()" data-label="Freeze Top Row">
+        <span class="bi">🔒</span> Freeze Row 1
+      </button>
+      <button class="btn btn-navy" onclick="freezeFirstColumn()" data-label="Freeze First Column">
+        <span class="bi">🔒</span> Freeze Col A
+      </button>
+      <button class="btn btn-navy" onclick="insertRowAbove()" data-label="Insert Row Above">
+        <span class="bi">➕</span> Insert Row ↑
+      </button>
+      <button class="btn btn-navy" onclick="insertColumnLeft()" data-label="Insert Column Left">
+        <span class="bi">➕</span> Insert Col ←
+      </button>
+      <button class="btn btn-navy" onclick="deleteRows()" data-label="Delete Row">
+        <span class="bi">➖</span> Delete Row
+      </button>
+      <button class="btn btn-navy" onclick="deleteColumns()" data-label="Delete Column">
+        <span class="bi">➖</span> Delete Column
+      </button>
+      <button class="btn btn-navy" onclick="showCellInfo()" data-label="Cell Info">
+        <span class="bi">ℹ️</span> Cell Info
+      </button>
+      <button class="btn btn-navy" onclick="countWords()" data-label="Word Count">
+        <span class="bi">🔢</span> Word Count
+      </button>
+    </div>
+  </div>
+
+  <!-- NUMBER FORMAT -->
+  <div class="section" data-section="number-format">
+    <div class="section-header" style="background:var(--teal)" onclick="toggleSection(this)">
+      <span>#</span> Number Formats
+      <span class="chevron">▼</span>
+    </div>
+    <div class="section-body">
+      <button class="btn btn-teal" onclick="formatCurrency()" data-label="Currency">
+        <span class="bi">💰</span> Currency
+      </button>
+      <button class="btn btn-teal" onclick="formatPercent()" data-label="Percentage">
+        <span class="bi">%</span> Percentage
+      </button>
+      <button class="btn btn-teal" onclick="formatNumber()" data-label="Number 2dp">
+        <span class="bi">🔢</span> Number (2dp)
+      </button>
+      <button class="btn btn-teal" onclick="formatDate()" data-label="Date Format">
+        <span class="bi">📅</span> Date (DD/MM/YY)
+      </button>
+      <button class="btn btn-teal" onclick="formatGeneral()" data-label="General Format">
+        <span class="bi">⚙</span> General
+      </button>
+      <button class="btn btn-teal" onclick="formatText()" data-label="Text Format">
+        <span class="bi">🔤</span> Text
+      </button>
+    </div>
+  </div>
+
+  <!-- CLOSE -->
+  <div class="section" data-section="close">
+    <button class="btn btn-close-big" onclick="closePanel()">
+      ✕ &nbsp; Close Toolbar
+    </button>
+  </div>
+
+  <div id="no-results">
+    <div class="nr-icon">🔍</div>
+    No tools found for "<span id="searchTerm"></span>"
+  </div>
+
+</div><!-- /scroll-area -->
+
+<script src="taskpane.js"></script>
+</body>
+</html>
