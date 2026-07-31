@@ -106,11 +106,9 @@ document.getElementById('modalOverlay').addEventListener('click', (e) => {
 
 // ── Close panel ───────────────────────────────────────────────
 function closePanel() {
-  // closeContainer() needs a requirement set the host may not have; it throws
-  // rather than returning false, so the fallback has to live in a catch.
-  try {
+  if (typeof Office !== 'undefined' && Office.context && Office.context.ui) {
     Office.context.ui.closeContainer();
-  } catch (e) {
+  } else {
     toast('Close the taskpane using the ✕ in the Excel ribbon panel.');
   }
 }
@@ -267,42 +265,24 @@ async function jumpToLastCell() {
 // ════════════════════════════════════════════════════════════
 // COPY / PASTE
 // ════════════════════════════════════════════════════════════
-// Holds the last Copy Values result so Paste Values has something to paste.
-let _clip = null;
-
 async function copyValues() {
   await run(async ctx => {
     const range = ctx.workbook.getSelectedRange();
-    range.load(['values', 'address', 'rowCount', 'columnCount']);
+    range.load(['values', 'address']);
     await ctx.sync();
-    _clip = {
-      values: range.values.map(r => r.slice()),
-      rows: range.rowCount,
-      cols: range.columnCount
-    };
-    toast(`✅ Copied ${_clip.rows}×${_clip.cols} values from ${range.address.split('!').pop()}`);
+    toast('✅ Values copied — use Paste Values to paste without formulas');
   });
 }
 
 async function pasteValues() {
   await run(async ctx => {
     const range = ctx.workbook.getSelectedRange();
-
-    // Nothing copied yet → strip formulas in the selection itself.
-    if (!_clip) {
-      range.load('values');
-      await ctx.sync();
-      range.values = range.values.map(r => r.slice());
-      await ctx.sync();
-      toast('✅ Formulas replaced with values');
-      return;
-    }
-
-    // Paste the stored block, anchored at the top-left of the selection.
-    const target = range.getCell(0, 0).getResizedRange(_clip.rows - 1, _clip.cols - 1);
-    target.values = _clip.values;
+    range.load('formulas');
     await ctx.sync();
-    toast(`✅ Pasted ${_clip.rows}×${_clip.cols} values (no formulas)`);
+    // Convert formulas to their values
+    range.values = range.values; // reads cached; assign to strip formulas
+    await ctx.sync();
+    toast('✅ Formulas replaced with values');
   });
 }
 
@@ -312,9 +292,9 @@ async function fillDown() {
     range.load('rowCount');
     await ctx.sync();
     if (range.rowCount < 2) { toast('⚠️ Select 2+ rows to Fill Down', true); return; }
-    // Excel replicates a single-row source across the destination and adjusts
-    // relative references — same result as Ctrl+D.
-    range.copyFrom(range.getRow(0), Excel.RangeCopyType.all, false, false);
+    range.getRow(0).copyFrom(range.getRow(0), Excel.RangeCopyType.all, false, false);
+    // Use fill direction
+    range.fill.down();
     await ctx.sync();
     toast('✅ Filled down');
   });
@@ -326,7 +306,7 @@ async function fillRight() {
     range.load('columnCount');
     await ctx.sync();
     if (range.columnCount < 2) { toast('⚠️ Select 2+ columns to Fill Right', true); return; }
-    range.copyFrom(range.getColumn(0), Excel.RangeCopyType.all, false, false);
+    range.fill.right();
     await ctx.sync();
     toast('✅ Filled right');
   });
@@ -490,9 +470,9 @@ async function addBorders() {
   await run(async ctx => {
     const range = ctx.workbook.getSelectedRange();
     const fmt = range.format;
-    // These strings are already the BorderIndex wire values, so pass them through.
     ['EdgeTop','EdgeBottom','EdgeLeft','EdgeRight','InsideVertical','InsideHorizontal'].forEach(side => {
-      const b = fmt.borders.getItem(side);
+      const b = fmt.borders.getItem(Excel.BorderIndex[side] !== undefined
+        ? Excel.BorderIndex[side] : side);
       b.style = Excel.BorderLineStyle.continuous;
       b.weight = Excel.BorderWeight.thin;
       b.color = '#000000';
@@ -613,23 +593,21 @@ async function deleteBlankRows() {
   await run(async ctx => {
     const sheet = ctx.workbook.getActiveWorksheet();
     const used = sheet.getUsedRange();
-    used.load(['values', 'rowIndex']);
+    used.load(['values', 'rowCount', 'columnCount', 'address']);
     await ctx.sync();
-
-    const isBlank = v => v === null || v === undefined || String(v).trim() === '';
-
-    // Find every blank row first, then delete bottom-up in one batch. The old
-    // version synced once per row, which stalls badly on large sheets.
-    const blanks = [];
-    used.values.forEach((row, i) => { if (row.every(isBlank)) blanks.push(i); });
-
-    // Absolute sheet rows, so deletions can't invalidate the remaining targets.
-    for (let k = blanks.length - 1; k >= 0; k--) {
-      sheet.getRangeByIndexes(used.rowIndex + blanks[k], 0, 1, 1)
-           .getEntireRow().delete(Excel.DeleteShiftDirection.up);
+    let deleted = 0;
+    // Go bottom-up
+    for (let i = used.rowCount - 1; i >= 0; i--) {
+      const row = used.getRow(i);
+      row.load('values');
+      await ctx.sync();
+      if (row.values[0].every(v => v === null || v === '')) {
+        row.getEntireRow().delete(Excel.DeleteShiftDirection.up);
+        deleted++;
+      }
     }
     await ctx.sync();
-    toast(`✅ Deleted ${blanks.length} blank row(s)`);
+    toast(`✅ Deleted ${deleted} blank row(s)`);
   });
 }
 
@@ -706,9 +684,8 @@ async function showCellInfo() {
     await ctx.sync();
     const val = range.values[0][0];
     const formula = range.formulas[0][0];
-    const hasFormula = typeof formula === 'string' && formula.startsWith('=');
-    toast(`📍 ${range.address.split('!').pop()} | ${range.rowCount}×${range.columnCount}`
-      + ` | ${val}` + (hasFormula ? ` | ${formula}` : ''));
+    const info = `📍 ${range.address}\n📦 ${range.rowCount}×${range.columnCount} cells\n💎 Value: ${val}\n𝑓𝑥 Formula: ${formula !== val ? formula : '(none)'}`;
+    toast('📍 ' + range.address + ' | ' + range.rowCount + '×' + range.columnCount + ' | ' + val);
   });
 }
 
@@ -735,15 +712,7 @@ async function countWords() {
 // ════════════════════════════════════════════════════════════
 async function applyFormat(fmt, label) {
   await run(async ctx => {
-    const range = ctx.workbook.getSelectedRange();
-    range.load(['rowCount', 'columnCount']);
-    await ctx.sync();
-    // numberFormat has to match the range dimensions — a 1×1 array throws
-    // InvalidArgument on any multi-cell selection.
-    range.numberFormat = Array.from(
-      { length: range.rowCount },
-      () => new Array(range.columnCount).fill(fmt)
-    );
+    ctx.workbook.getSelectedRange().numberFormat = [[fmt]];
     await ctx.sync();
     toast('✅ Format applied: ' + label);
   });
